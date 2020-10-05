@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Ghasem Elyasi / Udacity DevOps Cloud Engineer - Project II
+  This template deploys a VPC. with a pair of public and private subnets
+  spread across two Availability Zones.
+  It deploys:
+    - an Internet Gateway with a default route on public subnets
+    - a pair of NAT Gateways (one in each AZ)
+    - a VPC Endpoint to access S3 bucket without charge
+    - default routes in the private subnets to NAT gateways
+    - default routes in the private subnets to VPC endpoint
+
+Parameters:
+  myEnvName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  myVpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  myPubSub1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.0.0.0/24
+
+  myPubSub2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.0.1.0/24
+
+  myPrvSub1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.0.2.0/24
+
+  myPrvSub2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.0.3.0/24
+
+Resources:
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: myVpcCIDR
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: myEnvName
+
+  myInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: myEnvName
+
+  myInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: myInternetGateway
+      VpcId: myVPC
+
+  myPubSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: myPubSub1CIDR
+      VpcId: !Ref
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key:  Name
+          Value: !Sub ${myEnvName} Public Subnet (AZ1)
+
+  myPubSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: myPubSub2CIDR
+      VpcId: !Ref myVPC
+      AvailabilityZone: !Select [ 1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${myEnvName} Public Subnet (AZ2)
+
+  myPrivateSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref myPrvSub1CIDR
+      VpcId: !Ref myVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${myEnvName} Private Subnet (AZ1)
+
+  myPrivateSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref myPrvSub2CIDR
+      VpcId: !Ref myVPC
+      AvailabilityZone: !Select [ 1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${myEnvName} Private Subnet (AZ2)
+
+  myNatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: myInternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  myNatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt myNatGateway1EIP.AllocationId
+      SubnetId: !Ref myPubSubnet1
+
+  myNatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: myInternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  myNatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt myNatGateway2EIP.AllocationId
+      SubnetId: !Ref myPubSubnet2
