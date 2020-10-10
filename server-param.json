@@ -1,0 +1,10 @@
+[
+  {
+    "ParameterKey": "myEnvName",
+    "ParameterValue": "UdacityCloudDevOpsProject02"
+  },
+  {
+    "ParameterKey": "myGeneralCIDR",
+    "ParameterValue": "0.0.0.0/0"
+  }
+]

@@ -1,13 +1,84 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Ghasem Elyasi / Udacity DevOps Cloud Engineer - Project II
+  This template deploys a webapp similar to Instagram on AWS.
+
 Parameters:
-# whatever you consider a changing value, put it as a parameter instead of hard-coding it into your script
+  myEnvName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  myGeneralCIDR:
+    Description: General CIDR
+    Type: String
+
+
 Resources:
-  #instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
-  ProfileWithRolesForOurApp:
-    Type: AWS::IAM::InstanceProfile
-    Properties: 
-      Roles:
-        - UdacityS3ReadOnlyEC2
+  UdacityS3ReadOnlyEC2:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: Allows EC2 instances to call AWS services on your behalf.
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /    
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess      
+      Tags:
+        - Key: Name
+          Value: !Sub ${myEnvName} IAM role for readonly access to S3
   
+  ProfileWithRolesForOurApp:
+    Type: AWS::IAM::InstanceProfile    
+    Properties:
+      Roles:
+        - !Ref UdacityS3ReadOnlyEC2
+
+  
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:      
+      GroupDescription: Allow http and ssh to our hosts and SSH from local only
+      VpcId: 
+        Fn::ImportValue: !Sub "${myEnvName}-VPCID"
+      SecurityGroupIngress:
+        - CidrIp: !Ref myGeneralCIDR
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+        - CidrIp: !Ref myGeneralCIDR
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+      SecurityGroupEgress:
+        - CidrIp: !Ref myGeneralCIDR
+          IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+
+
+  WebAppLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: false
+      IamInstanceProfile: !Ref ProfileWithRolesForOurApp
+      ImageId: ami-0eddd5d08379980d8      
+      InstanceType: t3.medium      
+      KeyName: udacity-key # need to be removed
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/opt
+          Ebs:
+            VolumeSize: '10'
+      UserData:
+        Fn::Base64: !Sub
           #!/bin/bash
           apt-get update -y
           apt-get install unzip awscli -y
@@ -16,5 +87,5 @@ Resources:
           cd /var/www/html
           aws s3 cp s3://udacity-demo-1/udacity.zip .
           unzip -o udacity.zip
-  Outputs: 
-  #Bonus points for useful outputs!
+
+  
