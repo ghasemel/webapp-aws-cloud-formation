@@ -113,6 +113,7 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs ""]
       VpcId: !Ref myVPC
       CidrBlock: !Ref myPrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
           Value: !Sub ${myEnvName} Private Subnet (AZ1)
@@ -132,12 +133,25 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref myNatGateway1
 
+  myPrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref myPrivateSubnet1
+      RouteTableId: !Ref myPrivateRouteTable1
+
+
+
+
+
+
+  # public subnet2
   myPublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [1, !GetAZs ""]
       VpcId: !Ref myVPC
       CidrBlock: !Ref myPublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: !Sub ${myEnvName} Public Subent (AZ2)
@@ -148,24 +162,27 @@ Resources:
       SubnetId: !Ref myPublicSubnet2
       RouteTableId: !Ref myPublicRouteTable
 
+  # NatGateway 2
   myNatGateway2EIP:
     Type: AWS::EC2::EIP
     DependsOn: myInternetGatewayAttachment
     Properties:
       Domain: vpc
-
+      
   myNatGateway2:
     Type: AWS::EC2::NatGateway
     Properties:
       AllocationId: !GetAtt myNatGateway2EIP.AllocationId
       SubnetId: !Ref myPublicSubnet2
 
+  # private subnet 2
   myPrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [1, !GetAZs ""]
       VpcId: !Ref myVPC
       CidrBlock: !Ref myPrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
           Value: !Sub ${myEnvName} Private Subnet (AZ2)
@@ -235,7 +252,7 @@ Outputs:
     Description: A list of the private subnets
     Value: !Join [",", [!Ref myPrivateSubnet1, !Ref myPrivateSubnet2]]
     Export:
-      Name: !Sub ${myEnvName}-PRI-NETS
+      Name: !Sub ${myEnvName}-PRIV-NET
 
   PublicSubnet1:
     Description: A reference to the public subnet in the 1st Availability Zone

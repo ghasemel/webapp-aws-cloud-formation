@@ -12,6 +12,57 @@ Parameters:
     Description: General CIDR
     Type: String
 
+  myWebAppPort:
+    Description: WebApp Port on Instances
+    Type: Number
+
+  myUdagramPort:
+    Description: LoadBalancer port for inbound traffic
+    Type: Number
+
+  myWebAppHealthCheckPort:
+    Description: WebApp health check port
+    Type: Number
+
+  myHealthCheckInterval:
+    Description: Health Check Interval
+    Type: Number
+
+  myHealthCheckPath:
+    Description: Health Check Path
+    Type: String   
+
+  myHealthCheckProtocol:
+    Description: WebApp health check port
+    Type: String
+
+  myHealthCheckTimeout:
+    Description: Health Check Timeout
+    Type: Number
+
+  myHealthyThresholdCount:
+    Description: Healthy Threshold Count
+    Type: Number
+
+  myUnhealthyThresholdCount:
+    Description: Unhealthy Threshold Count
+    Type: Number
+
+  myAutoScalingGroupMinInstances:
+    Description: Auto Scaling Group Min Instances Size
+    Type: Number
+
+  myAutoScalingGroupMaxInstances:
+    Description: Auto Scaling Group Max Instances Size
+    Type: Number
+
+  myLoadBalancerProtocol:
+    Description: Load Balancer Protocol
+    Type: String
+
+  myWebAppProtocol:
+    Description: WebApp Protocol
+    Type: String
 
 Resources:
   UdacityS3ReadOnlyEC2:
@@ -41,6 +92,9 @@ Resources:
         - !Ref UdacityS3ReadOnlyEC2
 
   
+
+
+
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:      
@@ -50,8 +104,8 @@ Resources:
       SecurityGroupIngress:
         - CidrIp: !Ref myGeneralCIDR
           IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: !Ref myWebAppPort
+          ToPort: !Ref myWebAppPort
         - CidrIp: !Ref myGeneralCIDR
           IpProtocol: tcp
           FromPort: 22
@@ -62,24 +116,24 @@ Resources:
           FromPort: 0
           ToPort: 65535
 
-
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      AssociatePublicIpAddress: false
+      #AssociatePublicIpAddress: true # need to be removed
       IamInstanceProfile: !Ref ProfileWithRolesForOurApp
-      ImageId: ami-0eddd5d08379980d8      
+      ImageId: ami-005bdb005fb00e791      
       InstanceType: t3.medium      
       KeyName: udacity-key # need to be removed
       SecurityGroups:
         - !Ref WebServerSecurityGroup
       BlockDeviceMappings:
-        - DeviceName: /dev/opt
+        - DeviceName: /dev/sdk
           Ebs:
             VolumeSize: '10'
       UserData:
-        Fn::Base64: !Sub
+        Fn::Base64: !Sub |
           #!/bin/bash
+          export DEBIAN_FRONTEND=noninteractive
           apt-get update -y
           apt-get install unzip awscli -y
           apt-get install apache2 -y
@@ -87,5 +141,153 @@ Resources:
           cd /var/www/html
           aws s3 cp s3://udacity-demo-1/udacity.zip .
           unzip -o udacity.zip
+          rm udacity.zip
+
+  WebAppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub "${myEnvName}-PRIV-NETS"
+      LaunchConfigurationName: !Ref WebAppLaunchConfig    
+      MinSize: !Ref myAutoScalingGroupMinInstances
+      MaxSize: !Ref myAutoScalingGroupMaxInstances
+      TargetGroupARNs:
+        - Ref: WebAppTargetGroup
+
+
+
+
+
+  # load balancer
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:  
+      GroupDescription: Allow http to our load balancer
+      VpcId:
+        Fn::ImportValue: !Sub "${myEnvName}-VPCID"
+      SecurityGroupIngress:
+        - CidrIp: !Ref myGeneralCIDR
+          IpProtocol: tcp
+          FromPort: !Ref myUdagramPort
+          ToPort: !Ref myUdagramPort
+      SecurityGroupEgress:
+        - CidrIp: !Ref myGeneralCIDR
+          IpProtocol: tcp
+          FromPort: !Ref myWebAppPort
+          ToPort: !Ref myWebAppPort
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - Fn::ImportValue: !Sub "${myEnvName}-PUB1-SN"
+        - Fn::ImportValue: !Sub "${myEnvName}-PUB2-SN"
+  
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn: !Ref WebAppTargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: !Ref myUdagramPort
+      Protocol: !Ref myLoadBalancerProtocol
+
+  LoadBalancerListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties: 
+      Actions: 
+        - Type: forward
+          TargetGroupArn: !Ref WebAppTargetGroup
+      Conditions: 
+        - Field: path-pattern
+          Values: [/]          
+      ListenerArn: !Ref LoadBalancerListener
+      Priority: 1
 
   
+  # target group
+  WebAppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      HealthCheckIntervalSeconds: !Ref myHealthCheckInterval
+      HealthCheckPath: !Ref myHealthCheckPath
+      HealthCheckPort: !Ref myWebAppHealthCheckPort
+      HealthCheckProtocol: !Ref myHealthCheckProtocol
+      HealthCheckTimeoutSeconds: !Ref myHealthCheckTimeout
+      HealthyThresholdCount: !Ref myHealthyThresholdCount
+      Port: !Ref myWebAppPort
+      Protocol: !Ref myWebAppProtocol
+      TargetType: instance
+      UnhealthyThresholdCount: !Ref myUnhealthyThresholdCount
+      VpcId:
+        Fn::ImportValue: !Sub "${myEnvName}-VPCID"
+
+
+# outputs
+Outputs:
+  LoadBalancerDNS:
+    Description: Load balnacer DNS name
+    Value: 
+      Fn::Sub: 
+        - "${myLoadBalancerProtocol}://${dns}" 
+        - { dns: !GetAtt LoadBalancer.DNSName}
+    Export:
+      Name: !Sub ${myEnvName}-LB-DNS
+
+  LoadBalancerInboundPort:
+    Description: Inbound port of load balancer
+    Value: !Ref myUdagramPort
+    Export:
+      Name: !Sub ${myEnvName}-LB-INBOUND-PORT
+
+  LoadBalancerProtocol:
+    Description: Load Balancer Protocol
+    Value: !Ref myLoadBalancerProtocol
+    Export:
+      Name: !Sub ${myEnvName}-LB-PROTOCOL
+
+  WebAppInboundPort:
+    Description: Inbound port of the WebApp
+    Value: !Ref myWebAppPort
+    Export:
+      Name: !Sub ${myEnvName}-WEBAPP-INBOUND-PORT
+
+  WebAppProtocol:
+    Description: WebApp Protocol
+    Value: !Ref myWebAppProtocol
+    Export:
+      Name: !Sub ${myEnvName}-WEBAPP-PROTOCOL
+
+  AutoScalingGroupMinInstances:
+    Description: Auto Scaling Group Minimum Instances
+    Value: !Ref myAutoScalingGroupMinInstances
+    Export:
+      Name: !Sub ${myEnvName}-AUTO-SCALING-MIN-INSTANCES
+
+  AutoScalingGroupMaxInstances:
+    Description: Auto Scaling Group Maximum Instances
+    Value: !Ref myAutoScalingGroupMaxInstances
+    Export:
+      Name: !Sub ${myEnvName}-AUTO-SCALING-MAX-INSTANCES
+
+  HealthCheckPath:
+    Description: Health Check Path
+    Value: !Ref myHealthCheckPath
+    Export:
+      Name: !Sub ${myEnvName}-HEALTH-CHECK-PATH
+
+  HealthCheckProtocol:
+    Description: Health Check Protocol
+    Value: !Ref myHealthCheckProtocol
+    Export:
+      Name: !Sub ${myEnvName}-HEALTH-CHECK-PROTOCOL
+
+  HealthCheckInterval:
+    Description: Health Check Interval
+    Value: !Ref myHealthCheckInterval
+    Export:
+      Name: !Sub ${myEnvName}-HEALTH-CHECK-INTERVAL
