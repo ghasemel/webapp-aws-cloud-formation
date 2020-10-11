@@ -225,6 +225,44 @@ Resources:
         Fn::ImportValue: !Sub "${myEnvName}-VPCID"
 
 
+  myCPUPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref WebAppAutoScalingGroup
+      Cooldown: "60"
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+
+
+  # monitoring
+  cloudWatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      Period: 60
+      Threshold: 50
+      AlarmActions: 
+        - !Ref WebAppAutoScalingGroup
+      AlarmDescription: To monitor cpu usage of all instances
+      DatapointsToAlarm: 1
+      Statistic: Average
+      Metrics:
+      - Expression: ANOMALY_DETECTION_BAND(m1, 2)
+        Id: ad1
+      - Id: m1
+        MetricStat:
+          Metric:
+            MetricName: Invocations
+            Namespace: AWS/Lambda
+          Period: !!int 86400
+          Stat: Sum
+      ThresholdMetricId: ad1
+
+
 # outputs
 Outputs:
   LoadBalancerDNS:
