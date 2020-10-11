@@ -119,11 +119,9 @@ Resources:
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      #AssociatePublicIpAddress: true # need to be removed
       IamInstanceProfile: !Ref ProfileWithRolesForOurApp
       ImageId: ami-005bdb005fb00e791      
       InstanceType: t3.medium      
-      KeyName: udacity-key # need to be removed
       SecurityGroups:
         - !Ref WebServerSecurityGroup
       BlockDeviceMappings:
