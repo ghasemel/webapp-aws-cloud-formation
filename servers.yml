@@ -67,7 +67,7 @@ Parameters:
 Resources:
   # IAM Role to access S3 bucket
   UdacityS3ReadOnlyEC2:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties:
       Description: Allows EC2 instances to call AWS services on your behalf.
       AssumeRolePolicyDocument:
