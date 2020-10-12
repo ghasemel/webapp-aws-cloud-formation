@@ -30,7 +30,7 @@ Parameters:
 
   myHealthCheckPath:
     Description: Health Check Path
-    Type: String   
+    Type: String
 
   myHealthCheckProtocol:
     Description: WebApp health check port
@@ -65,8 +65,9 @@ Parameters:
     Type: String
 
 Resources:
+  # IAM Role to access S3 bucket
   UdacityS3ReadOnlyEC2:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       Description: Allows EC2 instances to call AWS services on your behalf.
       AssumeRolePolicyDocument:
@@ -75,31 +76,28 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-              - ec2.amazonaws.com
+                - ec2.amazonaws.com
             Action:
-              - 'sts:AssumeRole'
-      Path: /    
+              - "sts:AssumeRole"
+      Path: /
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess      
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
       Tags:
         - Key: Name
           Value: !Sub ${myEnvName} IAM role for readonly access to S3
-  
+
   ProfileWithRolesForOurApp:
-    Type: AWS::IAM::InstanceProfile    
+    Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
         - !Ref UdacityS3ReadOnlyEC2
 
-  
-
-
-
-  WebServerSecurityGroup:
+  # SecurityGroup of the web app
+  WebAppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Properties:      
+    Properties:
       GroupDescription: Allow http and ssh to our hosts and SSH from local only
-      VpcId: 
+      VpcId:
         Fn::ImportValue: !Sub "${myEnvName}-VPCID"
       SecurityGroupIngress:
         - CidrIp: !Ref myGeneralCIDR
@@ -116,18 +114,19 @@ Resources:
           FromPort: 0
           ToPort: 65535
 
+  # WebApp Launch Configuration
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       IamInstanceProfile: !Ref ProfileWithRolesForOurApp
-      ImageId: ami-005bdb005fb00e791      
-      InstanceType: t3.medium      
+      ImageId: ami-005bdb005fb00e791
+      InstanceType: t3.medium
       SecurityGroups:
-        - !Ref WebServerSecurityGroup
+        - !Ref WebAppSecurityGroup
       BlockDeviceMappings:
         - DeviceName: /dev/sdk
           Ebs:
-            VolumeSize: '10'
+            VolumeSize: "10"      
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -141,25 +140,22 @@ Resources:
           unzip -o udacity.zip
           rm udacity.zip
 
+  # WebApp Auto Scaling Group
   WebAppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier:
         - Fn::ImportValue: !Sub "${myEnvName}-PRIV-NETS"
-      LaunchConfigurationName: !Ref WebAppLaunchConfig    
+      LaunchConfigurationName: !Ref WebAppLaunchConfig
       MinSize: !Ref myAutoScalingGroupMinInstances
-      MaxSize: !Ref myAutoScalingGroupMaxInstances
+      MaxSize: !Ref myAutoScalingGroupMaxInstances      
       TargetGroupARNs:
         - Ref: WebAppTargetGroup
 
-
-
-
-
-  # load balancer
+  # load balancer SecurityGroup
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Properties:  
+    Properties:
       GroupDescription: Allow http to our load balancer
       VpcId:
         Fn::ImportValue: !Sub "${myEnvName}-VPCID"
@@ -173,7 +169,8 @@ Resources:
           IpProtocol: tcp
           FromPort: !Ref myWebAppPort
           ToPort: !Ref myWebAppPort
-
+  
+  # load balancer
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -183,11 +180,11 @@ Resources:
       Subnets:
         - Fn::ImportValue: !Sub "${myEnvName}-PUB1-SN"
         - Fn::ImportValue: !Sub "${myEnvName}-PUB2-SN"
-  
+
   LoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties: 
-      DefaultActions: 
+    Properties:
+      DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref WebAppTargetGroup
       LoadBalancerArn: !Ref LoadBalancer
@@ -196,21 +193,20 @@ Resources:
 
   LoadBalancerListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties: 
-      Actions: 
+    Properties:
+      Actions:
         - Type: forward
           TargetGroupArn: !Ref WebAppTargetGroup
-      Conditions: 
+      Conditions:
         - Field: path-pattern
-          Values: [/]          
+          Values: [/]
       ListenerArn: !Ref LoadBalancerListener
       Priority: 1
 
-  
   # target group
   WebAppTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties: 
+    Properties:
       HealthCheckIntervalSeconds: !Ref myHealthCheckInterval
       HealthCheckPath: !Ref myHealthCheckPath
       HealthCheckPort: !Ref myWebAppHealthCheckPort
@@ -224,19 +220,27 @@ Resources:
       VpcId:
         Fn::ImportValue: !Sub "${myEnvName}-VPCID"
 
-
-  myCPUPolicy:
+  # Automatic Scaling Policies
+  ScaleOutPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
-    Properties: 
+    Properties:
       AdjustmentType: ChangeInCapacity
       AutoScalingGroupName: !Ref WebAppAutoScalingGroup
-      Cooldown: "60"
+      Cooldown: "120"
       PolicyType: SimpleScaling
       ScalingAdjustment: 1
 
+  ScaleInPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref WebAppAutoScalingGroup
+      Cooldown: "120"
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1
 
-  # monitoring
-  cloudWatchAlarm:
+  # CloudWatch Alarms to trigger the scaling policies
+  CpuHighUsageCloudWatchAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       MetricName: CPUUtilization
@@ -245,32 +249,35 @@ Resources:
       EvaluationPeriods: 1
       Period: 60
       Threshold: 50
-      AlarmActions: 
-        - !Ref WebAppAutoScalingGroup
-      AlarmDescription: To monitor cpu usage of all instances
+      AlarmActions:
+        - !Ref ScaleOutPolicy
+      AlarmDescription: To alarm when cpu usage of all instances is greater than the threshold
       DatapointsToAlarm: 1
       Statistic: Average
-      Metrics:
-      - Expression: ANOMALY_DETECTION_BAND(m1, 2)
-        Id: ad1
-      - Id: m1
-        MetricStat:
-          Metric:
-            MetricName: Invocations
-            Namespace: AWS/Lambda
-          Period: !!int 86400
-          Stat: Sum
-      ThresholdMetricId: ad1
 
+  CpuLowUsageCloudWatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      ComparisonOperator: LessThanThreshold
+      EvaluationPeriods: 1
+      Period: 60
+      Threshold: 30
+      AlarmActions:
+        - !Ref ScaleInPolicy
+      AlarmDescription: To alarm when cpu usage of all instances is less than the threshold
+      DatapointsToAlarm: 1
+      Statistic: Average
 
 # outputs
 Outputs:
   LoadBalancerDNS:
     Description: Load balnacer DNS name
-    Value: 
-      Fn::Sub: 
-        - "${myLoadBalancerProtocol}://${dns}" 
-        - { dns: !GetAtt LoadBalancer.DNSName}
+    Value:
+      Fn::Sub:
+        - "${myLoadBalancerProtocol}://${dns}"
+        - { dns: !GetAtt LoadBalancer.DNSName }
     Export:
       Name: !Sub ${myEnvName}-LB-DNS
 

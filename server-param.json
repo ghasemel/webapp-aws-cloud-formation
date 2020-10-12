@@ -45,11 +45,11 @@
   },
   {
     "ParameterKey": "myAutoScalingGroupMinInstances",
-    "ParameterValue": "1"
+    "ParameterValue": "4"
   },
   {
     "ParameterKey": "myAutoScalingGroupMaxInstances",
-    "ParameterValue": "2"
+    "ParameterValue": "8"
   },
   {
     "ParameterKey": "myLoadBalancerProtocol",
